@@ -1,0 +1,118 @@
+.rq-login-shell {
+  --rq-teal: #20d5c2;
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 24px;
+  color: #eaf6ff;
+  background:
+    radial-gradient(ellipse at 16% 12%, rgba(14, 165, 233, .15), transparent 36%),
+    radial-gradient(ellipse at 86% 84%, rgba(32, 213, 194, .12), transparent 34%),
+    linear-gradient(135deg, #070d18 0%, #091827 52%, #071321 100%);
+  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  box-sizing: border-box;
+}
+.rq-login-shell::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  opacity: .22;
+  background-image: linear-gradient(rgba(126, 190, 220, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(126, 190, 220, .07) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+}
+.rq-login-shell::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 420px;
+  height: 420px;
+  border: 1px solid rgba(32, 213, 194, .11);
+  border-radius: 50%;
+  box-shadow: 0 0 0 42px rgba(32, 213, 194, .025), 0 0 0 84px rgba(32, 213, 194, .02);
+  transform: translate(260px, -210px);
+  pointer-events: none;
+}
+.rq-login-shell * { box-sizing: border-box; }
+.rq-login-card {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  padding: 38px 36px 28px;
+  border: 1px solid rgba(133, 190, 218, .19);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(15, 35, 53, .96), rgba(8, 23, 38, .97));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .42), 0 0 36px rgba(14, 165, 233, .055), inset 0 1px 0 rgba(255, 255, 255, .045);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.rq-login-card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 22%;
+  right: 22%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(32, 213, 194, .8), transparent);
+}
+.rq-login-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 27px; }
+.rq-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: #8af8ed;
+  background: linear-gradient(145deg, rgba(32, 213, 194, .19), rgba(14, 165, 233, .11));
+  border: 1px solid rgba(32, 213, 194, .45);
+  box-shadow: 0 0 22px rgba(32, 213, 194, .10), inset 0 1px 0 rgba(255, 255, 255, .08);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -1px;
+}
+.rq-brand-name { font-size: 27px; font-weight: 800; letter-spacing: -1px; }
+.rq-brand-name span { color: #35ddcf; }
+.rq-login-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 14px;
+  color: #7bded8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+}
+.rq-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #35ddcf; box-shadow: 0 0 10px rgba(53, 221, 207, .8); }
+.rq-login-card h1 { margin: 0 0 8px; text-align: center; font-size: 30px; line-height: 1.2; letter-spacing: -1px; color: #f4faff; }
+.rq-panel-description { margin: 0 0 27px; text-align: center; color: #8faabd; font-size: 12px; line-height: 1.6; }
+.rq-field-label { display: block; margin: 17px 0 8px; color: #c9dbe8; font-size: 11px; font-weight: 700; letter-spacing: .15px; }
+.rq-input-wrap, .rq-select-wrap { display: flex; align-items: center; gap: 10px; min-height: 49px; padding: 0 13px; border: 1px solid rgba(143, 177, 199, .22); border-radius: 11px; background: rgba(4, 15, 27, .68); color: #79a8bd; transition: border-color .2s, box-shadow .2s, background .2s; }
+.rq-input-wrap:focus-within, .rq-select-wrap:focus-within { border-color: rgba(32, 213, 194, .75); background: rgba(4, 19, 30, .92); box-shadow: 0 0 0 3px rgba(32, 213, 194, .09), 0 0 20px rgba(32, 213, 194, .04); }
+.rq-input-wrap input, .rq-select-wrap select { width: 100%; min-width: 0; color: #eaf5fc; border: 0; outline: 0; background: transparent; font: inherit; font-size: 12px; }
+.rq-input-wrap input::placeholder { color: #6e8799; }
+.rq-select-wrap select { appearance: none; cursor: pointer; padding: 14px 0; }
+.rq-select-wrap select option { color: #eaf5fc; background: #102338; }
+.rq-select-wrap > span { color: #8eacbe; pointer-events: none; }
+.rq-show-password { display: grid; place-items: center; padding: 4px; border: 0; color: #8eacbe; background: transparent; cursor: pointer; }
+.rq-show-password:hover { color: #45dfd0; }
+.rq-form-options { display: flex; justify-content: flex-start; align-items: center; margin: 17px 0 21px; font-size: 11px; color: #a5bac9; }
+.rq-remember { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.rq-remember input { width: 14px; height: 14px; accent-color: #20cbb9; }
+.rq-form-error { padding: 10px 12px; margin: 0 0 14px; border: 1px solid rgba(255, 113, 128, .32); border-radius: 9px; background: rgba(255, 83, 101, .07); color: #ff9ca8; font-size: 12px; line-height: 1.5; }
+.rq-signin-button { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 49px; border: 1px solid rgba(141, 255, 241, .42); border-radius: 11px; color: #05242c; background: linear-gradient(105deg, #46e0d0 0%, #39cdd1 52%, #4dbcf1 100%); box-shadow: 0 8px 24px rgba(32, 213, 194, .15); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform .2s, filter .2s, box-shadow .2s; }
+.rq-signin-button:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 10px 28px rgba(32, 213, 194, .22); }
+.rq-signin-button:disabled { opacity: .7; cursor: wait; transform: none; }
+.rq-login-footer { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 23px 0 0; color: #718b9e; text-align: center; font-size: 10px; }
+.rq-login-footer svg { color: #38cfc5; }
+@media (max-width: 480px) {
+  .rq-login-shell { padding: 16px; }
+  .rq-login-card { padding: 31px 22px 24px; border-radius: 19px; }
+  .rq-brand-name { font-size: 25px; }
+}
+@media (prefers-reduced-motion: reduce) { .rq-signin-button, .rq-input-wrap, .rq-select-wrap { transition: none; } }

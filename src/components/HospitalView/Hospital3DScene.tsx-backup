@@ -1,0 +1,527 @@
+import React, { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { DEPARTMENTS_DATA } from '../../data/mockData';
+import { DepartmentData } from '../../types';
+
+interface Hospital3DSceneProps {
+  currentFloor: string;
+  selectedDepartment: DepartmentData | null;
+  onSelectDepartment: (dept: DepartmentData) => void;
+  viewMode: 'departments' | 'resources' | 'patientFlow';
+}
+
+interface PinMarker {
+  id: string;
+  name: string;
+  tagColor: 'pink' | 'cyan' | 'amber' | 'red';
+  screenX: number;
+  screenY: number;
+  visible: boolean;
+}
+
+export const Hospital3DScene: React.FC<Hospital3DSceneProps> = ({
+  currentFloor,
+  selectedDepartment,
+  onSelectDepartment,
+  viewMode,
+}) => {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const [pins, setPins] = useState<PinMarker[]>([]);
+
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const animFrameIdRef = useRef<number>(0);
+  const particleGroupRef = useRef<THREE.Group | null>(null);
+  const roomMeshesRef = useRef<{ [id: string]: THREE.Mesh }>({});
+  const bedsGroupRef = useRef<THREE.Group | null>(null);
+
+  useEffect(() => {
+    const container = mountRef.current;
+    if (!container) return;
+
+    // 1. Scene
+    const scene = new THREE.Scene();
+    sceneRef.current = scene;
+    scene.background = new THREE.Color(0x060c18);
+    scene.fog = new THREE.FogExp2(0x060c18, 0.025);
+
+    // 2. Camera
+    const aspect = container.clientWidth / container.clientHeight;
+    const camera = new THREE.PerspectiveCamera(40, aspect, 0.5, 100);
+    camera.position.set(0, 16, 18);
+    cameraRef.current = camera;
+
+    // 3. Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    rendererRef.current = renderer;
+    container.appendChild(renderer.domElement);
+
+    // 4. Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 0, 0);
+    controls.maxPolarAngle = Math.PI / 2.15;
+    controls.minDistance = 8;
+    controls.maxDistance = 35;
+    controlsRef.current = controls;
+
+    // 5. Lighting
+    const ambientLight = new THREE.AmbientLight(0x1a2e4a, 1.8);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xd9f2ff, 2.5);
+    dirLight.position.set(12, 24, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
+
+    const cyanPointLight = new THREE.PointLight(0x00f0ff, 3, 20);
+    cyanPointLight.position.set(0, 8, 0);
+    scene.add(cyanPointLight);
+
+    // 6. Base Foundation & Ground Grid
+    const groundGeo = new THREE.PlaneGeometry(80, 80);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x050a14,
+      roughness: 0.85,
+      metalness: 0.2,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.5;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const gridHelper = new THREE.GridHelper(50, 50, 0x00b4d8, 0x0f2744);
+    gridHelper.position.y = -0.48;
+    scene.add(gridHelper);
+
+    // 7. Hospital Floor Base Slab (Isometric Cutaway Structure)
+    const baseGroup = new THREE.Group();
+    scene.add(baseGroup);
+
+    // Dark glass floor slab
+    const floorGeo = new THREE.BoxGeometry(16, 0.4, 14);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0c1b30,
+      roughness: 0.3,
+      metalness: 0.6,
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.position.y = 0;
+    floorMesh.receiveShadow = true;
+    baseGroup.add(floorMesh);
+
+    // Glowing cyan edge strip on slab
+    const edgeGeo = new THREE.BoxGeometry(16.1, 0.08, 14.1);
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+    const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
+    edgeMesh.position.y = 0.2;
+    baseGroup.add(edgeMesh);
+
+    // 8. Room Floors, Walls, and Partitions
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x1b2e47,
+      roughness: 0.5,
+      metalness: 0.4,
+    });
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.35,
+      roughness: 0.1,
+      metalness: 0.1,
+      transmission: 0.6,
+    });
+
+    const createWall = (w: number, h: number, d: number, x: number, z: number, isGlass = false) => {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mesh = new THREE.Mesh(geo, isGlass ? glassMat : wallMat);
+      mesh.position.set(x, h / 2 + 0.2, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      baseGroup.add(mesh);
+    };
+
+    // Outer perimeter walls (low cutaway style for isometric visibility)
+    const wallH = 1.2;
+    createWall(15.6, wallH, 0.25, 0, -6.8); // Back wall
+    createWall(0.25, wallH, 13.6, -7.8, 0); // Left wall
+    createWall(0.25, wallH, 13.6, 7.8, 0); // Right wall
+    createWall(6.5, wallH, 0.25, -4.5, 6.8); // Front left
+    createWall(6.5, wallH, 0.25, 4.5, 6.8); // Front right (gap for entrance)
+
+    // Interior partitions dividing rooms:
+    // Maternity Ward (NW: x: -4, z: -3.5, size: 7 x 6)
+    createWall(7, wallH, 0.2, -4.2, -0.5); // Divider between NW and SW
+    createWall(0.2, wallH, 6.2, -0.7, -3.6); // Divider between NW and NE
+    
+    // NICU Ward (NE: x: 3.5, z: -3.5, size: 7 x 6)
+    createWall(7, wallH, 0.2, 4.2, -0.5); // Divider between NE and SE
+    createWall(0.2, wallH, 6.2, 0.7, -3.6, true); // Glass corridor wall
+
+    // Paediatrics (SE: x: 3.8, z: 3.2, size: 7 x 6.5)
+    createWall(0.2, wallH, 6, 0.7, 3.5, true); // Glass inner corridor wall
+
+    // Central Corridor / Nurse Station (SW: x: -4, z: 3.2)
+    // Nurse station desk
+    const deskGeo = new THREE.BoxGeometry(3, 0.6, 1.2);
+    const deskMat = new THREE.MeshStandardMaterial({ color: 0x1e3a5f, metalness: 0.5, roughness: 0.2 });
+    const desk = new THREE.Mesh(deskGeo, deskMat);
+    desk.position.set(-3.5, 0.5, 2.5);
+    baseGroup.add(desk);
+
+    // 9. Department Room Floor Plates (for interactive highlighting and heatmap coloring)
+    const roomMeshes: { [id: string]: THREE.Mesh } = {};
+
+    const createRoomPlate = (id: string, w: number, d: number, x: number, z: number, color: number) => {
+      const geo = new THREE.PlaneGeometry(w, d);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.4,
+        metalness: 0.3,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, 0.21, z);
+      mesh.receiveShadow = true;
+      baseGroup.add(mesh);
+      roomMeshes[id] = mesh;
+    };
+
+    createRoomPlate('maternity', 6.8, 6, -4.2, -3.7, 0x1e2746);
+    createRoomPlate('nicu', 6.8, 6, 4.2, -3.7, 0x241a38);
+    createRoomPlate('paediatrics', 6.8, 6.8, 4.2, 3.3, 0x142b3d);
+    createRoomPlate('nurse', 6.8, 6.8, -4.2, 3.3, 0x0f2034);
+
+    roomMeshesRef.current = roomMeshes;
+
+    // 10. Medical Beds, Equipment, Incubators
+    const bedsGroup = new THREE.Group();
+    baseGroup.add(bedsGroup);
+    bedsGroupRef.current = bedsGroup;
+
+    const createHospitalBed = (x: number, z: number, rotY = 0, isIncubator = false) => {
+      const bed = new THREE.Group();
+      bed.position.set(x, 0.2, z);
+      bed.rotation.y = rotY;
+
+      if (!isIncubator) {
+        // Bed base
+        const frame = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 0.3, 1.6),
+          new THREE.MeshStandardMaterial({ color: 0x2a4365, metalness: 0.6, roughness: 0.3 })
+        );
+        frame.position.y = 0.2;
+        frame.castShadow = true;
+        bed.add(frame);
+
+        // Mattress & Sheets
+        const mattress = new THREE.Mesh(
+          new THREE.BoxGeometry(0.82, 0.15, 1.5),
+          new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 })
+        );
+        mattress.position.y = 0.38;
+        bed.add(mattress);
+
+        // White pillow
+        const pillow = new THREE.Mesh(
+          new THREE.BoxGeometry(0.65, 0.1, 0.35),
+          new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.6 })
+        );
+        pillow.position.set(0, 0.48, -0.5);
+        bed.add(pillow);
+
+        // Beside Monitor
+        const monitorPole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.02, 0.02, 0.9),
+          new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
+        );
+        monitorPole.position.set(0.6, 0.45, -0.5);
+        bed.add(monitorPole);
+
+        const screen = new THREE.Mesh(
+          new THREE.BoxGeometry(0.25, 0.18, 0.05),
+          new THREE.MeshBasicMaterial({ color: 0x00ffcc })
+        );
+        screen.position.set(0.6, 0.9, -0.5);
+        bed.add(screen);
+      } else {
+        // NICU Incubator
+        const incBase = new THREE.Mesh(
+          new THREE.BoxGeometry(0.7, 0.45, 0.9),
+          new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 })
+        );
+        incBase.position.y = 0.25;
+        bed.add(incBase);
+
+        // Transparent Dome
+        const dome = new THREE.Mesh(
+          new THREE.BoxGeometry(0.62, 0.35, 0.8),
+          new THREE.MeshPhysicalMaterial({ color: 0xff80bf, transparent: true, opacity: 0.45, roughness: 0.1 })
+        );
+        dome.position.y = 0.65;
+        bed.add(dome);
+
+        // Internal Infant Warm Light
+        const incLight = new THREE.PointLight(0xff007f, 1.5, 2.5);
+        incLight.position.set(0, 0.65, 0);
+        bed.add(incLight);
+      }
+
+      bedsGroup.add(bed);
+    };
+
+    // Maternity Ward beds (6 beds)
+    createHospitalBed(-6, -5, Math.PI / 2);
+    createHospitalBed(-6, -3, Math.PI / 2);
+    createHospitalBed(-6, -1.2, Math.PI / 2);
+    createHospitalBed(-2.5, -5, -Math.PI / 2);
+    createHospitalBed(-2.5, -3, -Math.PI / 2);
+    createHospitalBed(-2.5, -1.2, -Math.PI / 2);
+
+    // NICU Incubators (6 infant pods)
+    createHospitalBed(2.6, -5, Math.PI / 2, true);
+    createHospitalBed(2.6, -3, Math.PI / 2, true);
+    createHospitalBed(2.6, -1.2, Math.PI / 2, true);
+    createHospitalBed(5.8, -5, -Math.PI / 2, true);
+    createHospitalBed(5.8, -3, -Math.PI / 2, true);
+    createHospitalBed(5.8, -1.2, -Math.PI / 2, true);
+
+    // Paediatrics Beds (4 beds)
+    createHospitalBed(2.8, 2, Math.PI / 2);
+    createHospitalBed(2.8, 4.5, Math.PI / 2);
+    createHospitalBed(5.8, 2, -Math.PI / 2);
+    createHospitalBed(5.8, 4.5, -Math.PI / 2);
+
+    // 11. Animated Patient Flow Particles
+    const particleGroup = new THREE.Group();
+    scene.add(particleGroup);
+    particleGroupRef.current = particleGroup;
+
+    const particleCount = 28;
+    const particleGeo = new THREE.SphereGeometry(0.09, 8, 8);
+    const particleMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const flowParticles: { mesh: THREE.Mesh; t: number; speed: number; path: THREE.Vector3[] }[] = [];
+
+    // Corridor Waypoint Path
+    const pathA = [
+      new THREE.Vector3(0, 0.4, 6.8), // entrance
+      new THREE.Vector3(0, 0.4, 0), // hallway hub
+      new THREE.Vector3(-4, 0.4, 0), // maternity entrance
+      new THREE.Vector3(-4, 0.4, -3), // maternity bed
+    ];
+    const pathB = [
+      new THREE.Vector3(0, 0.4, 6.8),
+      new THREE.Vector3(0, 0.4, 0),
+      new THREE.Vector3(4, 0.4, 0),
+      new THREE.Vector3(4, 0.4, -3), // NICU
+    ];
+    const pathC = [
+      new THREE.Vector3(0, 0.4, 6.8),
+      new THREE.Vector3(0, 0.4, 2.5),
+      new THREE.Vector3(4, 0.4, 2.5), // Paediatrics
+    ];
+
+    for (let i = 0; i < particleCount; i++) {
+      const pMesh = new THREE.Mesh(particleGeo, particleMat);
+      pMesh.visible = false;
+      particleGroup.add(pMesh);
+      const paths = [pathA, pathB, pathC];
+      flowParticles.push({
+        mesh: pMesh,
+        t: Math.random(),
+        speed: 0.003 + Math.random() * 0.004,
+        path: paths[i % 3],
+      });
+    }
+
+    // 12. Animation Loop & 2D Pin Projection
+    let clock = new THREE.Clock();
+
+    const animate = () => {
+      animFrameIdRef.current = requestAnimationFrame(animate);
+
+      clock.getDelta();
+      controls.update();
+
+      // Subtle scene ambient pulse
+      const time = clock.getElapsedTime();
+      cyanPointLight.intensity = 2.8 + Math.sin(time * 2) * 0.4;
+
+      // Animate patient flow particles
+      const isFlowActive = viewMode === 'patientFlow';
+      flowParticles.forEach((p) => {
+        p.mesh.visible = isFlowActive;
+        if (isFlowActive) {
+          p.t = (p.t + p.speed) % 1;
+          // Interpolate along path
+          const segmentCount = p.path.length - 1;
+          const globalT = p.t * segmentCount;
+          const segIndex = Math.min(Math.floor(globalT), segmentCount - 1);
+          const segT = globalT - segIndex;
+          p.mesh.position.lerpVectors(p.path[segIndex], p.path[segIndex + 1], segT);
+        }
+      });
+
+      // Calculate 2D screen positions for 3D department pin badges
+      if (container && camera) {
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const pinItems: { id: string; name: string; tagColor: 'pink' | 'cyan' | 'amber' | 'red'; position: THREE.Vector3 }[] = [
+          {
+            id: 'maternity',
+            name: 'Maternity Ward',
+            tagColor: 'pink',
+            position: new THREE.Vector3(-4.2, 1.4, -3.5),
+          },
+          {
+            id: 'nicu',
+            name: 'NICU',
+            tagColor: 'pink',
+            position: new THREE.Vector3(4.2, 1.4, -3.5),
+          },
+          {
+            id: 'paediatrics',
+            name: 'Paediatrics',
+            tagColor: 'cyan',
+            position: new THREE.Vector3(4.2, 1.4, 3.2),
+          },
+        ];
+
+        const updatedPins: PinMarker[] = pinItems.map((item) => {
+          const v = item.position.clone();
+          v.project(camera);
+          const screenX = ((v.x + 1) * width) / 2;
+          const screenY = ((-v.y + 1) * height) / 2;
+          const visible = v.z < 1; // within frustum
+          return {
+            id: item.id,
+            name: item.name,
+            tagColor: item.tagColor,
+            screenX,
+            screenY,
+            visible,
+          };
+        });
+
+        setPins(updatedPins);
+      }
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // Resize Handler
+    const handleResize = () => {
+      if (!container || !renderer || !camera) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      cancelAnimationFrame(animFrameIdRef.current);
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
+      if (renderer.domElement && container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+    };
+  }, []);
+
+  // Update Room colors according to viewMode (departments vs resources heatmap)
+  useEffect(() => {
+    const meshes = roomMeshesRef.current;
+    if (!meshes) return;
+
+    if (viewMode === 'resources') {
+      // Heatmap mode: Maternity (70% - cyan/yellow), NICU (80% - red/amber), Paediatrics (60% - green)
+      if (meshes.maternity) (meshes.maternity.material as THREE.MeshStandardMaterial).color.setHex(0xb45309);
+      if (meshes.nicu) (meshes.nicu.material as THREE.MeshStandardMaterial).color.setHex(0xb91c1c);
+      if (meshes.paediatrics) (meshes.paediatrics.material as THREE.MeshStandardMaterial).color.setHex(0x047857);
+    } else {
+      // Standard department mode
+      if (meshes.maternity) {
+        (meshes.maternity.material as THREE.MeshStandardMaterial).color.setHex(
+          selectedDepartment?.id === 'maternity' ? 0x2e1065 : 0x1e2746
+        );
+      }
+      if (meshes.nicu) {
+        (meshes.nicu.material as THREE.MeshStandardMaterial).color.setHex(
+          selectedDepartment?.id === 'nicu' ? 0x4a044e : 0x241a38
+        );
+      }
+      if (meshes.paediatrics) {
+        (meshes.paediatrics.material as THREE.MeshStandardMaterial).color.setHex(
+          selectedDepartment?.id === 'paediatrics' ? 0x083344 : 0x142b3d
+        );
+      }
+    }
+  }, [viewMode, selectedDepartment]);
+
+  return (
+    <div className="relative w-full h-full select-none overflow-hidden">
+      {/* Three.js Canvas Container */}
+      <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+      {/* Floating 3D Department Pin Labels matching reference image */}
+      {pins.map((pin) => {
+        if (!pin.visible) return null;
+        const isSelected = selectedDepartment?.id === pin.id;
+        const deptData = DEPARTMENTS_DATA[pin.id];
+
+        return (
+          <div
+            key={pin.id}
+            style={{
+              position: 'absolute',
+              left: `${pin.screenX}px`,
+              top: `${pin.screenY}px`,
+              transform: 'translate(-50%, -100%)',
+            }}
+            onClick={() => deptData && onSelectDepartment(deptData)}
+            className="group cursor-pointer pointer-events-auto transition-transform hover:scale-110 active:scale-95 duration-200"
+          >
+            {/* Pulsing beacon / label pill */}
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md shadow-lg transition-all duration-300 ${
+                pin.tagColor === 'pink'
+                  ? 'bg-fuchsia-950/85 text-fuchsia-200 border border-fuchsia-500/60 shadow-[0_0_15px_rgba(217,70,239,0.5)]'
+                  : 'bg-cyan-950/85 text-cyan-200 border border-cyan-400/60 shadow-[0_0_15px_rgba(6,182,212,0.5)]'
+              } ${isSelected ? 'ring-2 ring-white scale-105' : ''}`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  pin.tagColor === 'pink' ? 'bg-fuchsia-400' : 'bg-cyan-400'
+                } animate-pulse`}
+              />
+              <span>{pin.name}</span>
+            </div>
+
+            {/* Downward indicator pointer */}
+            <div className="w-0.5 h-3 bg-gradient-to-b from-cyan-400 to-transparent mx-auto opacity-70" />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
